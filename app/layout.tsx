@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Deskwise | Smart Office Seat Reservation",
-  description: "Deskwise helps employees reserve office desks and track presence with real-time dashboard updates.",
+  description: "Deskwise helps employees reserve office desks and manage their accounts.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

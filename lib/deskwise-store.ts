@@ -2,6 +2,7 @@ export type ProfileRole = "employee" | "admin";
 
 export type Profile = {
   id: string;
+  username: string;
   fullName: string;
   email: string;
   role: ProfileRole;
@@ -26,13 +27,12 @@ export type Reservation = {
   createdAt: string;
 };
 
-export type PresenceState = "not_checked_in" | "at_desk" | "temporarily_away";
-
-export type DeskPresence = {
-  deskId: string;
-  state: PresenceState;
-  updatedAt: string;
-  lastEventId: string;
+export type ReservationRecord = {
+  id: string;
+  desk_id: string;
+  user_id: string;
+  booking_date: string;
+  created_at: string;
 };
 
 export type DashboardSummary = {
@@ -47,36 +47,8 @@ export type DashboardData = {
   profiles: Profile[];
   desks: Desk[];
   reservations: Reservation[];
-  presence: DeskPresence[];
   summary: DashboardSummary;
 };
-
-const profiles: Profile[] = [
-  {
-    id: "user-emp-1",
-    fullName: "Lahiru Perera",
-    email: "lahiru@deskwise.app",
-    role: "employee",
-  },
-  {
-    id: "user-emp-2",
-    fullName: "Anushka Silva",
-    email: "anushka@deskwise.app",
-    role: "employee",
-  },
-  {
-    id: "user-emp-3",
-    fullName: "Nuwin Jayawardena",
-    email: "nuwin@deskwise.app",
-    role: "employee",
-  },
-  {
-    id: "user-admin-1",
-    fullName: "Nimali Fernando",
-    email: "nimali@deskwise.app",
-    role: "admin",
-  },
-];
 
 const desks: Desk[] = [
   {
@@ -121,36 +93,6 @@ const desks: Desk[] = [
   },
 ];
 
-const reservationStore: Reservation[] = [
-  {
-    id: "res-01",
-    deskId: "desk-01",
-    userId: "user-emp-1",
-    bookingDate: getLocalDateForOffset(0),
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "res-02",
-    deskId: "desk-03",
-    userId: "user-emp-2",
-    bookingDate: getLocalDateForOffset(0),
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "res-03",
-    deskId: "desk-04",
-    userId: "user-admin-1",
-    bookingDate: getLocalDateForOffset(1),
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const presenceStore: DeskPresence[] = [
-  { deskId: "desk-01", state: "at_desk", updatedAt: new Date().toISOString(), lastEventId: "event-1" },
-  { deskId: "desk-03", state: "temporarily_away", updatedAt: new Date().toISOString(), lastEventId: "event-2" },
-  { deskId: "desk-04", state: "not_checked_in", updatedAt: new Date().toISOString(), lastEventId: "event-3" },
-];
-
 export function getLocalDateForOffset(offsetDays: number): string {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
@@ -167,9 +109,44 @@ export function getLocalToday(): string {
   return getLocalDateForOffset(0);
 }
 
-export function getDashboard(date: string): DashboardData {
+export function getActiveDesk(deskId: string): Desk | undefined {
+  const desk = desks.find((item) => item.id === deskId);
+  return desk?.active ? desk : undefined;
+}
+
+export function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+export function validateBookingDate(bookingDate: string): string {
+  if (!isCalendarDate(bookingDate)) {
+    throw new Error("Enter a valid booking date.");
+  }
+
+  if (bookingDate < getLocalToday()) {
+    throw new Error("Bookings cannot be placed for past dates.");
+  }
+
+  return bookingDate;
+}
+
+export function reservationFromRecord(record: ReservationRecord): Reservation {
+  return {
+    id: record.id,
+    deskId: record.desk_id,
+    userId: record.user_id,
+    bookingDate: record.booking_date,
+    createdAt: record.created_at,
+  };
+}
+
+export function getDashboard(date: string, profiles: Profile[], reservations: Reservation[]): DashboardData {
   const targetDate = date || getLocalToday();
-  const reservationsForDate = reservationStore.filter((item) => item.bookingDate === targetDate);
+  const reservationsForDate = reservations.filter((item) => item.bookingDate === targetDate);
   const activeDesks = desks.filter((desk) => desk.active);
   const summary: DashboardSummary = {
     totalActiveDesks: activeDesks.length,
@@ -183,92 +160,6 @@ export function getDashboard(date: string): DashboardData {
     profiles,
     desks,
     reservations: reservationsForDate,
-    presence: presenceStore,
     summary,
   };
-}
-
-export function reserveDesk({
-  deskId,
-  userId,
-  bookingDate,
-}: {
-  deskId: string;
-  userId: string;
-  bookingDate: string;
-}): Reservation {
-  const desk = desks.find((item) => item.id === deskId);
-
-  if (!desk || !desk.active) {
-    throw new Error("Selected desk is unavailable.");
-  }
-
-  const normalizedDate = bookingDate || getLocalToday();
-  const reservationExists = reservationStore.some(
-    (item) => item.deskId === deskId && item.bookingDate === normalizedDate,
-  );
-
-  if (reservationExists) {
-    throw new Error("This desk has already been booked for the selected date.");
-  }
-
-  const selectedDate = new Date(`${normalizedDate}T00:00:00+05:30`);
-  const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Colombo" }));
-  today.setHours(0, 0, 0, 0);
-
-  if (selectedDate < today) {
-    throw new Error("Bookings cannot be placed for past dates.");
-  }
-
-  const reservation: Reservation = {
-    id: `res-${Date.now()}`,
-    deskId,
-    userId,
-    bookingDate: normalizedDate,
-    createdAt: new Date().toISOString(),
-  };
-
-  reservationStore.push(reservation);
-  return reservation;
-}
-
-export function cancelReservation({
-  reservationId,
-  userId,
-  role,
-}: {
-  reservationId: string;
-  userId: string;
-  role: ProfileRole;
-}): Reservation {
-  const reservationIndex = reservationStore.findIndex((reservation) => reservation.id === reservationId);
-
-  if (reservationIndex === -1) {
-    throw new Error("Reservation was not found.");
-  }
-
-  const reservation = reservationStore[reservationIndex];
-
-  if (role !== "admin" && reservation.userId !== userId) {
-    throw new Error("You can only cancel your own reservation.");
-  }
-
-  reservationStore.splice(reservationIndex, 1);
-  return reservation;
-}
-
-export function getProfileById(userId: string): Profile | undefined {
-  return profiles.find((profile) => profile.id === userId);
-}
-
-export function getDeskStatus(deskId: string, bookingDate: string): "available" | "reserved" | "mine" {
-  const reservation = reservationStore.find(
-    (item) => item.deskId === deskId && item.bookingDate === bookingDate,
-  );
-
-  if (!reservation) {
-    return "available";
-  }
-
-  return reservation.userId === "user-emp-1" ? "mine" : "reserved";
 }
